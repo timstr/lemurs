@@ -1,0 +1,47 @@
+Instruction listing
+
+|----------|-------------------|-------------------|-------------------|
+| MNEMONIC | BYTE 0            | BYTE 1            | BYTE 2            |
+|----------|---------|---------|-------------------|-------------------|
+| output   | 0 0 0 0 | a a a a |                   |                   | Output register A
+| loadimm  | 0 0 0 1 | a a a a | v v v v   v v v v |                   | Load immediate value V into register A
+| loadmem  | 0 0 1 0 | a a a a | m m m m   m m m m | m m m m   m m m m | Load value at memory address M into register A
+| storemem | 0 0 1 1 | a a a a | m m m m   m m m m | m m m m   m m m m | Store value of register A at memory address M
+| loadind  | 0 1 0 0 | a a a a | b b b b   c c c c |                   | Indirect load from memory at address composed of registers BC into register A
+| storeind | 0 1 0 1 | a a a a | b b b b   c c c c |                   | Indirect store to memory at address composed of registers BC from register A
+| call     | 0 1 1 0 |         | m m m m   m m m m | m m m m   m m m m | Call (push program counter, unconditional branch to memory address M)
+| return   | 0 1 1 1 |         |                   |                   | Return (pop program counter)
+| jmp      | 1 0 0 0 |         | m m m m   m m m m | m m m m   m m m m | Unconditional branch to memory address M
+| jmpfwdo  | 1 0 0 1 | a a a a | o o o o   o o o o |                   | Conditional relative branch backward by offset -O if register A is odd
+| jmpbwdo  | 1 0 1 0 | a a a a | o o o o   o o o o |                   | Conditional relative branch forward by offset +O if register A is odd
+| jmpo     | 1 0 1 1 | a a a a | m m m m   m m m m | m m m m   m m m m | Conditional branch to memory address M if register A is odd
+| push     | 1 1 0 0 | a a a a |                   |                   | Push register A
+| pop      | 1 1 0 1 | a a a a |                   |                   | Pop register A
+| [OP]imm  | 1 1 1 0 | s s s s | a a a a | b b b b | v v v v   v v v v | Perform binary operation S (see below) in register B and value V, storing result in A
+| [OP]     | 1 1 1 1 | s s s s | a a a a | b b b b |                   | Perform binary operation S (see below) in registers A and B, storing result in A
+|----------|-------------------|---------|---------|-------------------|
+
+
+Binary register operations
+    Read values of registers A and B, compute result, store result in register A
+
+|----------|---------|-------------------------------|
+| MNEMONIC | CODE    | EXPLANATION                   |
+|----------|---------|-------------------------------|
+| and      | 0 0 0 0 | Bitwise AND register A with B |
+| or       | 0 0 0 1 | Bitwise OR register A with B  |
+| xor      | 0 0 1 0 | Bitwise XOR register A with B |
+| shl      | 0 0 1 1 | Left-shift register A by B    |
+| shr      | 0 1 0 0 | Right-shift register A by B   |
+| rotl     | 0 1 0 1 | Left-rotate register A by B   |
+| rotr     | 0 1 1 0 | Right-rotate register A by B  |
+| add      | 0 1 1 1 | Add register B to A           |
+| sub      | 1 0 0 0 | Subtract register B from A    |
+| mul      | 1 0 0 1 | Multiply register A by B      |
+| div      | 1 0 1 0 | Divide register A by B        |
+| mod      | 1 0 1 1 | Modulo register A by B        |
+| gt       | 1 1 0 0 | Store (A > B) in A            |
+| lt       | 1 1 0 1 | Store (A < B) in A            |
+| eq       | 1 1 1 0 | Store (A == B) in A           |
+| neq      | 1 1 1 1 | Store (A != B) in A           |
+|----------|---------|-------------------------------|

@@ -1,7 +1,6 @@
 use std::env;
 use std::fs;
 use std::io::stdin;
-use std::io::stdout;
 use std::io::Read;
 use std::io::Write;
 use std::ops::BitAnd;
@@ -10,6 +9,7 @@ use std::ops::BitXor;
 use std::ops::Div;
 use std::ops::Not;
 use std::ops::Rem;
+use std::process::Stdio;
 
 #[derive(Clone, Copy)]
 struct Reg8Id(u8);
@@ -92,10 +92,35 @@ impl Machine {
         }
     }
 
-    fn run(&mut self) {
+    fn run<T: Write>(&mut self, output: &mut T) {
+        let num_bins: usize = 160;
+        let interval: usize = 50000;
+        let mut histogram = Vec::<usize>::new();
+        histogram.resize(num_bins, 0);
+        let mut interval_counter = 0;
+        let chars: Vec<char> = " ._-+=!$#".chars().collect();
         loop {
             let i = self.fetch();
-            self.execute(i);
+            self.execute(i, output);
+            histogram[self.program_counter * num_bins / self.memory.len()] += 1;
+            if interval_counter == interval {
+                interval_counter = 0;
+                print!("|");
+                for c in histogram.iter().cloned() {
+                    let nc = c * chars.len() / interval;
+                    if c > 0 && nc == 0 {
+                        print!(".");
+                    } else {
+                        print!("{}", chars[nc]);
+                    }
+                }
+                println!("|");
+                for c in &mut histogram {
+                    *c = 0;
+                }
+                // std::thread::sleep(Duration::from_millis(50));
+            }
+            interval_counter += 1;
         }
     }
 
@@ -161,15 +186,15 @@ impl Machine {
         }
     }
 
-    fn execute(&mut self, instruction: Instruction) {
+    fn execute<T: Write>(&mut self, instruction: Instruction, output: &mut T) {
         match instruction {
             Instruction::Output(a) => {
                 let b = self.read_register_8bit(a);
-                stdout().write(&[b]).unwrap();
+                output.write(&[b]).unwrap();
             }
             Instruction::OutputW(a) => {
                 let [b0, b1] = self.read_register_16bit(a).to_be_bytes();
-                stdout().write(&[b0, b1]).unwrap();
+                output.write(&[b0, b1]).unwrap();
             }
             Instruction::LoadMem(a, m) => self.write_register_8bit(a, self.read_memory_8bit(m)),
             Instruction::LoadMemW(a, m) => self.write_register_16bit(a, self.read_memory_16bit(m)),
@@ -179,7 +204,7 @@ impl Machine {
                 self.program_counter = (m.0 as usize) % self.memory.len();
             }
             Instruction::Jo(a, m) => {
-                if self.read_register_8bit(a) & 1 == 1 {
+                if self.read_register_8bit(a) & 0b1 == 0 {
                     self.program_counter = (m.0 as usize) % self.memory.len();
                 }
             }
@@ -393,6 +418,15 @@ fn main() {
     } else {
         fs::read(&args[1]).unwrap()
     };
+
+    let mut aplay_process = std::process::Command::new("aplay")
+        .args(["-r", "44100", "-f", "S16_BE"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut aplay_stdin = aplay_process.stdin.take().unwrap();
+
     let mut machine = Machine::new(memory);
-    machine.run();
+    machine.run(&mut aplay_stdin);
 }

@@ -1,47 +1,59 @@
 Instruction listing
 
-|----------|-------------------|-------------------|-------------------|
-| MNEMONIC | BYTE 0            | BYTE 1            | BYTE 2            |
-|----------|---------|---------|-------------------|-------------------|
-| output   | 0 0 0 0 | a a a a |                   |                   | Output register A
-| loadimm  | 0 0 0 1 | a a a a | v v v v   v v v v |                   | Load immediate value V into register A
-| loadmem  | 0 0 1 0 | a a a a | m m m m   m m m m | m m m m   m m m m | Load value at memory address M into register A
-| storemem | 0 0 1 1 | a a a a | m m m m   m m m m | m m m m   m m m m | Store value of register A at memory address M
-| loadind  | 0 1 0 0 | a a a a | b b b b   c c c c |                   | Indirect load from memory at address composed of registers BC into register A
-| storeind | 0 1 0 1 | a a a a | b b b b   c c c c |                   | Indirect store to memory at address composed of registers BC from register A
-| call     | 0 1 1 0 |         | m m m m   m m m m | m m m m   m m m m | Call (push program counter, unconditional branch to memory address M)
-| return   | 0 1 1 1 |         |                   |                   | Return (pop program counter)
-| jmp      | 1 0 0 0 |         | m m m m   m m m m | m m m m   m m m m | Unconditional branch to memory address M
-| jmpfwdo  | 1 0 0 1 | a a a a | o o o o   o o o o |                   | Conditional relative branch backward by offset -O if register A is odd
-| jmpbwdo  | 1 0 1 0 | a a a a | o o o o   o o o o |                   | Conditional relative branch forward by offset +O if register A is odd
-| jmpo     | 1 0 1 1 | a a a a | m m m m   m m m m | m m m m   m m m m | Conditional branch to memory address M if register A is odd
-| push     | 1 1 0 0 | a a a a |                   |                   | Push register A
-| pop      | 1 1 0 1 | a a a a |                   |                   | Pop register A
-| [OP]imm  | 1 1 1 0 | s s s s | a a a a | b b b b | v v v v   v v v v | Perform binary operation S (see below) in register B and value V, storing result in A
-| [OP]     | 1 1 1 1 | s s s s | a a a a | b b b b |                   | Perform binary operation S (see below) in registers A and B, storing result in A
-|----------|-------------------|---------|---------|-------------------|
-
+|-----------|-------------------|-----|-----|-----|
+| MNEMONIC  | B0                | B1  | B2  | B3  |
+|-----------|-------------------|-----|-----|-----|
+| output    | 0 0 0 0   aaaa    |     |     |     | Output 8bit register A
+| outputw   | 0 0 0 1   aaaa    |     |     |     | Output 16bit register A
+| loadmem   | 0 0 1 0   aaaa    | M M | M M |     | Load 8bit value at memory address M into 8bit register A
+| loadmemw  | 0 0 1 1   aaaa    | M M | M M |     | Load 16bit value at memory address M into 16bit register A
+| storemem  | 0 1 0 0   aaaa    | M M | M M |     | Store value of 8bit register A at memory address M
+| storememw | 0 1 0 1   aaaa    | M M | M M |     | Store value of 16bit register A at memory address M
+| jmp       | 0 1 1 0   ----    | M M | M M |     | Unconditional branch to memory address M
+| jo        | 0 1 1 1   aaaa    | M M | M M |     | Conditional branch to memory address M if 8bit register A is odd
+| - - - - - | - - - - - - - - - | - - | - - | - - |
+| [OP]      | 1 0 0 s   ssss    | A B |     |     | Perform 8bit binary operation S (see below) on registers A and B, storing result in A
+| [OP]w     | 1 0 1 s   ssss    | A B |     |     | Perform 16bit binary operation S (see below) on registers A and B, storing result in A
+| [OP]imm   | 1 1 0 s   ssss    | A B | V V |     | Perform 8bit binary operation S (see below) on register B and 8bit immediate value V, storing the result in A
+| [OP]immw  | 1 1 1 s   ssss    | A B | V V | V V | Perform 16bit binary operation S (see below) on register B and 16bit immediate value V, storing the result in A
+|-----------|-------------------|-----|-----|-----|
 
 Binary register operations
     Read values of registers A and B, compute result, store result in register A
 
-|----------|---------|-------------------------------|
-| MNEMONIC | CODE    | EXPLANATION                   |
-|----------|---------|-------------------------------|
-| and      | 0 0 0 0 | Bitwise AND register A with B |
-| or       | 0 0 0 1 | Bitwise OR register A with B  |
-| xor      | 0 0 1 0 | Bitwise XOR register A with B |
-| shl      | 0 0 1 1 | Left-shift register A by B    |
-| shr      | 0 1 0 0 | Right-shift register A by B   |
-| rotl     | 0 1 0 1 | Left-rotate register A by B   |
-| rotr     | 0 1 1 0 | Right-rotate register A by B  |
-| add      | 0 1 1 1 | Add register B to A           |
-| sub      | 1 0 0 0 | Subtract register B from A    |
-| mul      | 1 0 0 1 | Multiply register A by B      |
-| div      | 1 0 1 0 | Divide register A by B        |
-| mod      | 1 0 1 1 | Modulo register A by B        |
-| gt       | 1 1 0 0 | Store (A > B) in A            |
-| lt       | 1 1 0 1 | Store (A < B) in A            |
-| eq       | 1 1 1 0 | Store (A == B) in A           |
-| neq      | 1 1 1 1 | Store (A != B) in A           |
-|----------|---------|-------------------------------|
+|----------|-----------|-------------------------------|
+| MNEMONIC | CODE      | EXPLANATION                   |
+|----------|-----------|-------------------------------|
+| copy     | 0 0 0 0 0 | B                             |
+| not      | 0 0 0 0 1 | ~B                            |
+| neg      | 0 0 0 1 0 | MAX - B                       |
+| reverse  | 0 0 0 1 1 | reverse(B)                    |
+| numones  | 0 0 1 0 0 | byteswap(B)                   |
+| numzeros | 0 0 1 0 1 | popcount(B)                   |
+| and      | 0 0 1 1 0 | A & B                         |
+| or       | 0 0 1 1 1 | A | B                         |
+| xor      | 0 1 0 0 0 | A ^ B                         |
+| shl      | 0 1 0 0 1 | A << B                        |
+| shlm     | 0 1 0 1 0 | A << (B % BITS)               |
+| shr      | 0 1 0 1 1 | A >> B                        |
+| shrm     | 0 1 1 0 0 | A >> (B % BITS)               |
+| rotl     | 0 1 1 0 1 | rotl(A, B)                    |
+| rotr     | 0 1 1 1 0 | rotr(A, B)                    |
+| addc     | 0 1 1 1 1 | min(A + B, MAX)               |
+| addm     | 1 0 0 0 0 | (A + B) & MAX                 |
+| subc     | 1 0 0 0 1 | max(A - B, 0)                 |
+| subm     | 1 0 0 1 0 | (A - B) & MAX                 |
+| absdiff  | 1 0 0 1 1 | abs(B - A)                    |
+| mulc     | 1 0 1 0 0 | min(A * B, MAX)               |
+| mulm     | 1 0 1 0 1 | (A * B) & MAX                 |
+| div      | 1 0 1 1 0 | A / max(B, 1)                 |
+| mod      | 1 0 1 1 1 | A % max(B, 1)                 |
+| powm     | 1 1 0 0 0 | pow(A, B) & MAX               |
+| powc     | 1 1 0 0 1 | min(pow(A, B), MAX)           |
+| gt       | 1 1 0 1 0 | A > B                         |
+| ge       | 1 1 0 1 1 | A >= B                        |
+| lt       | 1 1 1 0 0 | A < B                         |
+| le       | 1 1 1 0 1 | A <= B                        |
+| eq       | 1 1 1 1 0 | A == B                        |
+| ne       | 1 1 1 1 1 | A != B                        |
+|----------|-----------|-------------------------------|

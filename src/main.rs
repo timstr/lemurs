@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::stdin;
@@ -10,18 +11,22 @@ use std::ops::Div;
 use std::ops::Not;
 use std::ops::Rem;
 use std::process::Stdio;
+use std::str::SplitWhitespace;
+
+type Value = u32;
+type WideValue = u64;
 
 #[derive(Clone, Copy)]
-struct Reg8Id(u8);
+struct RegId(u8);
 
 #[derive(Clone, Copy)]
-struct Reg16Id(u8);
+struct RegWId(u8);
 
 #[derive(Clone, Copy)]
-struct Imm8(u8);
+struct Imm(Value);
 
 #[derive(Clone, Copy)]
-struct Imm16(u16);
+struct ImmW(WideValue);
 
 #[derive(Clone, Copy)]
 struct Addr(u16);
@@ -62,24 +67,182 @@ enum Operation {
 }
 
 enum Instruction {
-    Output(Reg8Id),
-    OutputW(Reg16Id),
-    LoadMem(Reg8Id, Addr),
-    LoadMemW(Reg16Id, Addr),
-    StoreMem(Reg8Id, Addr),
-    StoreMemW(Reg16Id, Addr),
+    Output(RegId),
+    OutputW(RegWId),
+    LoadMem(RegId, Addr),
+    LoadMemW(RegWId, Addr),
+    StoreMem(RegId, Addr),
+    StoreMemW(RegWId, Addr),
     Jmp(Addr),
-    Jo(Reg8Id, Addr),
-    Op(Operation, Reg8Id, Reg8Id),
-    OpW(Operation, Reg16Id, Reg16Id),
-    OpImm(Operation, Reg8Id, Reg8Id, Imm8),
-    OpImmW(Operation, Reg16Id, Reg16Id, Imm16),
+    Jo(RegId, Addr),
+    Op(Operation, RegId, RegId),
+    OpW(Operation, RegWId, RegWId),
+    OpImm(Operation, RegId, RegId, Imm),
+    OpImmW(Operation, RegWId, RegWId, ImmW),
+}
+
+fn assemble(text: String) -> Vec<u8> {
+    let mut data: Vec<u8> = Vec::new();
+
+    let mut labels: HashMap<String, usize> = HashMap::new();
+    let mut label_uses: Vec<(String, usize)> = Vec::new();
+
+    let encode_register = |words: &mut SplitWhitespace| -> u8 {
+        let w = words.next().unwrap();
+        assert!(w.starts_with("r"));
+        let i = (&w[1..]).parse::<u8>().unwrap();
+        i
+    };
+
+    let encode_address =
+        |words: &mut SplitWhitespace, data: &mut Vec<u8>, label_uses: &mut Vec<(String, usize)>| {
+            let w = words.next().unwrap();
+            let [b0, b1] = if let Ok(i) = w.parse::<i16>() {
+                i.to_be_bytes()
+            } else {
+                label_uses.push((w.to_string(), data.len()));
+                [0, 0]
+            };
+            data.push(b0);
+            data.push(b1);
+        };
+
+    let encode_operation = |opstr: &str| -> u8 {
+        match opstr {
+            "copy" => 0b00000,
+            "not" => 0b00001,
+            "neg" => 0b00010,
+            "reverse" => 0b00011,
+            "numones" => 0b00100,
+            "numzeros" => 0b00101,
+            "and" => 0b00110,
+            "or" => 0b00111,
+            "xor" => 0b01000,
+            "shl" => 0b01001,
+            "shlm" => 0b01010,
+            "shr" => 0b01011,
+            "shrm" => 0b01100,
+            "rotl" => 0b01101,
+            "rotr" => 0b01110,
+            "addc" => 0b01111,
+            "addm" => 0b10000,
+            "subc" => 0b10001,
+            "subm" => 0b10010,
+            "absdiff" => 0b10011,
+            "mulc" => 0b10100,
+            "mulm" => 0b10101,
+            "div" => 0b10110,
+            "mod" => 0b10111,
+            "powm" => 0b11000,
+            "powc" => 0b11001,
+            "gt" => 0b11010,
+            "ge" => 0b11011,
+            "lt" => 0b11100,
+            "le" => 0b11101,
+            "eq" => 0b11110,
+            "ne" => 0b11111,
+            _ => panic!("{}", opstr),
+        }
+    };
+
+    for line in text.lines() {
+        let line = line.trim().to_string();
+        let line = line.split(";").next().unwrap();
+        if line.is_empty() {
+            continue;
+        }
+        let mut words = line.split_whitespace();
+
+        let first_word = words.next().unwrap();
+
+        if first_word.ends_with(":") {
+            let label_name = first_word[..(first_word.len() - 1)].to_string();
+            labels.insert(label_name, data.len());
+            continue;
+        }
+
+        match first_word {
+            "output" => data.push(0b0000_0000 | encode_register(&mut words)),
+            "outputw" => data.push(0b0001_0000 | encode_register(&mut words)),
+            "loadmem" => {
+                data.push(0b0010_0000 | encode_register(&mut words));
+                encode_address(&mut words, &mut data, &mut label_uses);
+            }
+            "loadmemw" => {
+                data.push(0b0011_0000 | encode_register(&mut words));
+                encode_address(&mut words, &mut data, &mut label_uses);
+            }
+            "storemem" => {
+                data.push(0b0100_0000 | encode_register(&mut words));
+                encode_address(&mut words, &mut data, &mut label_uses);
+            }
+            "storememw" => {
+                data.push(0b0101_0000 | encode_register(&mut words));
+                encode_address(&mut words, &mut data, &mut label_uses);
+            }
+            "jmp" => {
+                data.push(0b0110_0000);
+                encode_address(&mut words, &mut data, &mut label_uses);
+            }
+            "jo" => {
+                data.push(0b0111_0000 | encode_register(&mut words));
+                encode_address(&mut words, &mut data, &mut label_uses);
+            }
+            _ => {
+                let mut opstr = first_word.to_string();
+                let mut wide = false;
+                let mut immediate = false;
+                if opstr.ends_with("w") {
+                    opstr.remove(opstr.len() - 1);
+                    wide = true;
+                }
+                if opstr.ends_with("imm") {
+                    opstr.drain((opstr.len() - 3)..);
+                    immediate = true;
+                }
+                let mut opcode = 0b1000_0000;
+                if wide {
+                    opcode |= 0b0010_0000;
+                }
+                if immediate {
+                    opcode |= 0b0100_0000;
+                }
+                opcode |= encode_operation(&opstr);
+                data.push(opcode);
+                let a = encode_register(&mut words);
+                let b = encode_register(&mut words);
+                data.push((a << 4) | b);
+                if immediate {
+                    if wide {
+                        let i = words.next().unwrap().parse::<WideValue>().unwrap();
+                        for b in i.to_be_bytes() {
+                            data.push(b);
+                        }
+                    } else {
+                        let i = words.next().unwrap().parse::<Value>().unwrap();
+                        for b in i.to_be_bytes() {
+                            data.push(b);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (name, location) in label_uses {
+        let value = *labels.get(&name).unwrap();
+        let [m0, m1] = (value as u16).to_be_bytes();
+        data[location + 0] = m0;
+        data[location + 1] = m1;
+    }
+
+    data
 }
 
 struct Machine {
     memory: Vec<u8>,
     program_counter: usize,
-    register_file: [u8; 16],
+    register_file: [u8; 256],
 }
 
 impl Machine {
@@ -88,12 +251,12 @@ impl Machine {
         Machine {
             memory,
             program_counter: 0,
-            register_file: [0; 16],
+            register_file: [0; 256],
         }
     }
 
     fn run<T: Write>(&mut self, output: &mut T) {
-        let num_bins: usize = 160;
+        let num_bins: usize = 80;
         let interval: usize = 50000;
         let mut histogram = Vec::<usize>::new();
         histogram.resize(num_bins, 0);
@@ -103,11 +266,12 @@ impl Machine {
             let i = self.fetch();
             self.execute(i, output);
             histogram[self.program_counter * num_bins / self.memory.len()] += 1;
+            let max = histogram.iter().cloned().max().unwrap().max(1);
             if interval_counter == interval {
                 interval_counter = 0;
                 print!("|");
                 for c in histogram.iter().cloned() {
-                    let nc = c * chars.len() / interval;
+                    let nc = c * (chars.len() - 1) / max;
                     if c > 0 && nc == 0 {
                         print!(".");
                     } else {
@@ -118,7 +282,6 @@ impl Machine {
                 for c in &mut histogram {
                     *c = 0;
                 }
-                // std::thread::sleep(Duration::from_millis(50));
             }
             interval_counter += 1;
         }
@@ -128,22 +291,22 @@ impl Machine {
         let b0 = self.next_instruction_byte();
         let (n0a, n0b) = Self::byte_to_nibbles(b0);
         match n0a {
-            0b0000 => Instruction::Output(Reg8Id(n0b)),
-            0b0001 => Instruction::OutputW(Reg16Id(n0b)),
+            0b0000 => Instruction::Output(RegId(n0b)),
+            0b0001 => Instruction::OutputW(RegWId(n0b)),
             0b0010 => Instruction::LoadMem(
-                Reg8Id(n0b),
+                RegId(n0b),
                 Self::bytes_to_addr(self.next_instruction_byte(), self.next_instruction_byte()),
             ),
             0b0011 => Instruction::LoadMemW(
-                Reg16Id(n0b),
+                RegWId(n0b),
                 Self::bytes_to_addr(self.next_instruction_byte(), self.next_instruction_byte()),
             ),
             0b0100 => Instruction::StoreMem(
-                Reg8Id(n0b),
+                RegId(n0b),
                 Self::bytes_to_addr(self.next_instruction_byte(), self.next_instruction_byte()),
             ),
             0b0101 => Instruction::StoreMemW(
-                Reg16Id(n0b),
+                RegWId(n0b),
                 Self::bytes_to_addr(self.next_instruction_byte(), self.next_instruction_byte()),
             ),
             0b0110 => Instruction::Jmp(Addr(u16::from_be_bytes([
@@ -151,7 +314,7 @@ impl Machine {
                 self.next_instruction_byte(),
             ]))),
             0b0111 => Instruction::Jo(
-                Reg8Id(n0b),
+                RegId(n0b),
                 Addr(u16::from_be_bytes([
                     self.next_instruction_byte(),
                     self.next_instruction_byte(),
@@ -162,23 +325,27 @@ impl Machine {
                 let ab = self.next_instruction_byte();
                 let (a, b) = Self::byte_to_nibbles(ab);
                 match n0a >> 1 {
-                    0b100 => Instruction::Op(op, Reg8Id(a), Reg8Id(b)),
-                    0b101 => Instruction::OpW(op, Reg16Id(a), Reg16Id(b)),
-                    0b110 => Instruction::OpImm(
-                        op,
-                        Reg8Id(a),
-                        Reg8Id(b),
-                        Imm8(self.next_instruction_byte()),
-                    ),
-                    0b111 => Instruction::OpImmW(
-                        op,
-                        Reg16Id(a),
-                        Reg16Id(b),
-                        Imm16(u16::from_be_bytes([
-                            self.next_instruction_byte(),
-                            self.next_instruction_byte(),
-                        ])),
-                    ),
+                    0b100 => Instruction::Op(op, RegId(a), RegId(b)),
+                    0b101 => Instruction::OpW(op, RegWId(a), RegWId(b)),
+                    0b110 => {
+                        let mut bytes = Value::default().to_be_bytes();
+                        for b in &mut bytes {
+                            *b = self.next_instruction_byte();
+                        }
+                        Instruction::OpImm(op, RegId(a), RegId(b), Imm(Value::from_be_bytes(bytes)))
+                    }
+                    0b111 => {
+                        let mut bytes = WideValue::default().to_be_bytes();
+                        for b in &mut bytes {
+                            *b = self.next_instruction_byte();
+                        }
+                        Instruction::OpImmW(
+                            op,
+                            RegWId(a),
+                            RegWId(b),
+                            ImmW(WideValue::from_be_bytes(bytes)),
+                        )
+                    }
                     _ => panic!(),
                 }
             }
@@ -189,103 +356,122 @@ impl Machine {
     fn execute<T: Write>(&mut self, instruction: Instruction, output: &mut T) {
         match instruction {
             Instruction::Output(a) => {
-                let b = self.read_register_8bit(a);
-                output.write(&[b]).unwrap();
+                let b = self.read_register(a);
+                output.write(&[(b & 0xff) as u8]).unwrap();
             }
             Instruction::OutputW(a) => {
-                let [b0, b1] = self.read_register_16bit(a).to_be_bytes();
+                let [b0, b1] = ((self.read_register_wide(a) & 0xffff) as u16).to_be_bytes();
                 output.write(&[b0, b1]).unwrap();
             }
-            Instruction::LoadMem(a, m) => self.write_register_8bit(a, self.read_memory_8bit(m)),
-            Instruction::LoadMemW(a, m) => self.write_register_16bit(a, self.read_memory_16bit(m)),
-            Instruction::StoreMem(a, m) => self.write_memory_8bit(m, self.read_register_8bit(a)),
-            Instruction::StoreMemW(a, m) => self.write_memory_16bit(m, self.read_register_16bit(a)),
+            Instruction::LoadMem(a, m) => self.write_register(a, self.read_memory(m)),
+            Instruction::LoadMemW(a, m) => self.write_register_wide(a, self.read_memory_wide(m)),
+            Instruction::StoreMem(a, m) => self.write_memory(m, self.read_register(a)),
+            Instruction::StoreMemW(a, m) => self.write_memory_wide(m, self.read_register_wide(a)),
             Instruction::Jmp(m) => {
                 self.program_counter = (m.0 as usize) % self.memory.len();
             }
             Instruction::Jo(a, m) => {
-                if self.read_register_8bit(a) & 0b1 == 0 {
+                let va = self.read_register(a);
+                if va & 1 == 1 {
                     self.program_counter = (m.0 as usize) % self.memory.len();
                 }
             }
-            Instruction::Op(o, a, b) => self.write_register_8bit(
+            Instruction::Op(o, a, b) => self.write_register(
                 a,
-                Self::evaluate_operation_8bit(
+                Self::evaluate_operation(o, self.read_register(a), self.read_register(b)),
+            ),
+            Instruction::OpW(o, a, b) => self.write_register_wide(
+                a,
+                Self::evaluate_operation_wide(
                     o,
-                    self.read_register_8bit(a),
-                    self.read_register_8bit(b),
+                    self.read_register_wide(a),
+                    self.read_register_wide(b),
                 ),
             ),
-            Instruction::OpW(o, a, b) => self.write_register_16bit(
+            Instruction::OpImm(o, a, b, i) => {
+                self.write_register(a, Self::evaluate_operation(o, self.read_register(b), i.0))
+            }
+            Instruction::OpImmW(o, a, b, i) => self.write_register_wide(
                 a,
-                Self::evaluate_operation_16bit(
-                    o,
-                    self.read_register_16bit(a),
-                    self.read_register_16bit(b),
-                ),
-            ),
-            Instruction::OpImm(o, a, b, i) => self.write_register_8bit(
-                a,
-                Self::evaluate_operation_8bit(o, self.read_register_8bit(b), i.0),
-            ),
-            Instruction::OpImmW(o, a, b, i) => self.write_register_16bit(
-                a,
-                Self::evaluate_operation_16bit(o, self.read_register_16bit(b), i.0),
+                Self::evaluate_operation_wide(o, self.read_register_wide(b), i.0),
             ),
         }
     }
 
-    fn read_register_8bit(&self, register: Reg8Id) -> u8 {
-        self.register_file[register.0 as usize]
+    fn read_register(&self, register: RegId) -> Value {
+        let mut bytes = Value::default().to_be_bytes();
+        let num_bytes = bytes.len();
+        for (i, b) in bytes.iter_mut().enumerate() {
+            *b = self.register_file[(register.0 as usize) * num_bytes + i];
+        }
+        Value::from_be_bytes(bytes)
     }
-    fn read_register_16bit(&self, register: Reg16Id) -> u16 {
-        u16::from_be_bytes([
-            self.register_file[register.0 as usize],
-            self.register_file[((register.0 as usize) + 1) & 0xf],
-        ])
-    }
-
-    fn write_register_8bit(&mut self, register: Reg8Id, value: u8) {
-        self.register_file[register.0 as usize] = value
-    }
-    fn write_register_16bit(&mut self, register: Reg16Id, value: u16) {
-        let [b0, b1] = value.to_be_bytes();
-        self.register_file[register.0 as usize] = b0;
-        self.register_file[((register.0 as usize) + 1) & 0xf] = b1;
+    fn read_register_wide(&self, register: RegWId) -> WideValue {
+        let mut bytes = WideValue::default().to_be_bytes();
+        let num_bytes = bytes.len();
+        for (i, b) in bytes.iter_mut().enumerate() {
+            *b = self.register_file[(register.0 as usize) * num_bytes + i];
+        }
+        WideValue::from_be_bytes(bytes)
     }
 
-    fn read_memory_8bit(&self, address: Addr) -> u8 {
-        self.memory[(address.0 as usize) % self.memory.len()]
+    fn write_register(&mut self, register: RegId, value: Value) {
+        let bytes = value.to_be_bytes();
+        let num_bytes = bytes.len();
+        for (i, b) in bytes.into_iter().enumerate() {
+            self.register_file[(register.0 as usize) * num_bytes + i] = b;
+        }
     }
-    fn read_memory_16bit(&self, address: Addr) -> u16 {
-        u16::from_be_bytes([
-            self.memory[(address.0 as usize) % self.memory.len()],
-            self.memory[(address.0 as usize + 1) % self.memory.len()],
-        ])
+    fn write_register_wide(&mut self, register: RegWId, value: WideValue) {
+        let bytes = value.to_be_bytes();
+        let num_bytes = bytes.len();
+        for (i, b) in bytes.into_iter().enumerate() {
+            self.register_file[(register.0 as usize) * num_bytes + i] = b;
+        }
     }
 
-    fn write_memory_8bit(&mut self, address: Addr, value: u8) {
+    fn read_memory(&self, address: Addr) -> Value {
+        let mut bytes = Value::default().to_be_bytes();
         let l = self.memory.len();
-        self.memory[(address.0 as usize) % l] = value;
+        for (i, b) in bytes.iter_mut().enumerate() {
+            *b = self.memory[(address.0 as usize + i) % l];
+        }
+        Value::from_be_bytes(bytes)
     }
-    fn write_memory_16bit(&mut self, address: Addr, value: u16) {
-        let [b0, b1] = value.to_be_bytes();
+    fn read_memory_wide(&self, address: Addr) -> WideValue {
+        let mut bytes = WideValue::default().to_be_bytes();
         let l = self.memory.len();
-        self.memory[(address.0 as usize) % l] = b0;
-        self.memory[(address.0 as usize + 1) % l] = b1;
+        for (i, b) in bytes.iter_mut().enumerate() {
+            *b = self.memory[(address.0 as usize + i) % l];
+        }
+        WideValue::from_be_bytes(bytes)
+    }
+
+    fn write_memory(&mut self, address: Addr, value: Value) {
+        let l = self.memory.len();
+        for (i, b) in value.to_be_bytes().into_iter().enumerate() {
+            self.memory[(address.0 as usize + i) % l] = b;
+        }
+    }
+    fn write_memory_wide(&mut self, address: Addr, value: WideValue) {
+        let l = self.memory.len();
+        for (i, b) in value.to_be_bytes().into_iter().enumerate() {
+            self.memory[(address.0 as usize + i) % l] = b;
+        }
     }
 
     fn next_instruction_byte(&mut self) -> u8 {
         let b = self.memory[self.program_counter];
         self.program_counter += 1;
         if self.program_counter >= self.memory.len() {
+            // panic!();
             self.program_counter = 0;
         }
         b
     }
 
     fn byte_to_nibbles(b: u8) -> (u8, u8) {
-        (b & 0xf, b >> 4)
+        ((b >> 4) & 0xf, b & 0xf)
     }
 
     fn bytes_to_addr(b0: u8, b1: u8) -> Addr {
@@ -330,14 +516,14 @@ impl Machine {
         }
     }
 
-    fn evaluate_operation_8bit(op: Operation, a: u8, b: u8) -> u8 {
+    fn evaluate_operation(op: Operation, a: Value, b: Value) -> Value {
         match op {
             Operation::Copy => b,
             Operation::Not => b.not(),
-            Operation::Neg => u8::MAX - b,
+            Operation::Neg => Value::MAX - b,
             Operation::Reverse => b.reverse_bits(),
-            Operation::Numzeros => b.count_zeros() as u8,
-            Operation::Numones => b.count_ones() as u8,
+            Operation::Numzeros => b.count_zeros() as Value,
+            Operation::Numones => b.count_ones() as Value,
             Operation::And => a.bitand(b),
             Operation::Or => a.bitor(b),
             Operation::Xor => a.bitxor(b),
@@ -358,23 +544,23 @@ impl Machine {
             Operation::Mod => a.rem(b.max(1)),
             Operation::Powm => a.saturating_pow(b as u32),
             Operation::Powc => a.wrapping_pow(b as u32),
-            Operation::Gt => a.gt(&b) as u8,
-            Operation::Ge => a.ge(&b) as u8,
-            Operation::Lt => a.lt(&b) as u8,
-            Operation::Le => a.le(&b) as u8,
-            Operation::Eq => a.eq(&b) as u8,
-            Operation::Ne => a.ne(&b) as u8,
+            Operation::Gt => a.gt(&b) as Value,
+            Operation::Ge => a.ge(&b) as Value,
+            Operation::Lt => a.lt(&b) as Value,
+            Operation::Le => a.le(&b) as Value,
+            Operation::Eq => a.eq(&b) as Value,
+            Operation::Ne => a.ne(&b) as Value,
         }
     }
 
-    fn evaluate_operation_16bit(op: Operation, a: u16, b: u16) -> u16 {
+    fn evaluate_operation_wide(op: Operation, a: WideValue, b: WideValue) -> WideValue {
         match op {
             Operation::Copy => b,
             Operation::Not => b.not(),
-            Operation::Neg => u16::MAX - b,
+            Operation::Neg => WideValue::MAX - b,
             Operation::Reverse => b.reverse_bits(),
-            Operation::Numzeros => b.count_zeros() as u16,
-            Operation::Numones => b.count_ones() as u16,
+            Operation::Numzeros => b.count_zeros() as WideValue,
+            Operation::Numones => b.count_ones() as WideValue,
             Operation::And => a.bitand(b),
             Operation::Or => a.bitor(b),
             Operation::Xor => a.bitxor(b),
@@ -395,32 +581,48 @@ impl Machine {
             Operation::Mod => a.rem(b.max(1)),
             Operation::Powm => a.saturating_pow(b as u32),
             Operation::Powc => a.wrapping_pow(b as u32),
-            Operation::Gt => a.gt(&b) as u16,
-            Operation::Ge => a.ge(&b) as u16,
-            Operation::Lt => a.lt(&b) as u16,
-            Operation::Le => a.le(&b) as u16,
-            Operation::Eq => a.eq(&b) as u16,
-            Operation::Ne => a.ne(&b) as u16,
+            Operation::Gt => a.gt(&b) as WideValue,
+            Operation::Ge => a.ge(&b) as WideValue,
+            Operation::Lt => a.lt(&b) as WideValue,
+            Operation::Le => a.le(&b) as WideValue,
+            Operation::Eq => a.eq(&b) as WideValue,
+            Operation::Ne => a.ne(&b) as WideValue,
         }
     }
 }
 
 fn main() {
     let args: Vec<_> = env::args().collect();
-    if args.len() != 2 {
-        println!("Usage: {} path/to/file.bin", args[0]);
+
+    // HACK for debugging
+    // let args: Vec<String> = ["", "./example2.asm", "--assemble"]
+    //     .iter()
+    //     .map(|s| s.to_string())
+    //     .collect();
+
+    if args.len() < 2 || args.len() > 3 {
+        println!("Usage: {} path/to/file.bin [--assemble]", args[0]);
         return;
     }
-    let memory = if args[1] == "-" {
+    let mut memory = if args[1] == "-" {
         let mut v = Vec::new();
         stdin().read_to_end(&mut v).unwrap();
         v
     } else {
         fs::read(&args[1]).unwrap()
     };
+    if args.len() == 3 {
+        if args[2] == "--assemble" {
+            memory = assemble(String::from_utf8(memory).unwrap());
+        } else {
+            println!("What??");
+            return;
+        }
+    }
 
     let mut aplay_process = std::process::Command::new("aplay")
-        .args(["-r", "44100", "-f", "S16_BE"])
+        // .args(["-r", "44100", "-f", "S16_BE"])
+        .args(["-c4", "-r64"])
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();

@@ -1,8 +1,8 @@
-    addmimm r0 r0 3
-    addmimm r1 r1 0
-    addmimm r2 r2 13
-    addmimm r3 r3 111
-    addmimm r16 r16 127
+;    addmimm r0 r0 3
+;    addmimm r1 r1 0
+;    addmimm r2 r2 13
+;    addmimm r3 r3 111
+;    addmimm r16 r16 127
 l2:
     addmimm r17 r17 1
 l0:
@@ -20,6 +20,8 @@ l1:
     subcimmw r1 r1 0
     rotlimmw r1 r1 4
     jo r2 l1
+    shl r1 r2
+    shl r1 r1
     rotrimmw r1 r1 4
     jo r3 l4
     addmw r5 r1
@@ -30,9 +32,12 @@ l1:
     rotlimmw r5 r5 19
     output r11
     output r11
+    jo r3 l3
+    outputw r5
     jo r4 l3
-    output r11
+    output r3
 l3:
+    output r4
     output r10
 
     rotlimm r1 r1 4

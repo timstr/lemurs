@@ -68,8 +68,8 @@ enum Instruction {
     LoadMemW(Reg16Id, Addr),
     StoreMem(Reg8Id, Addr),
     StoreMemW(Reg16Id, Addr),
-    Jmp(Addr),
-    Jo(Reg8Id, Addr),
+    Nop(),
+    Jo(Reg8Id, Reg16Id),
     Op(Operation, Reg8Id, Reg8Id),
     OpW(Operation, Reg16Id, Reg16Id),
     OpImm(Operation, Reg8Id, Reg8Id, Imm8),
@@ -107,7 +107,7 @@ impl Machine {
                 interval_counter = 0;
                 print!("|");
                 for c in histogram.iter().cloned() {
-                    let nc = c * chars.len() / interval;
+                    let nc = c * (chars.len() - 1) / interval;
                     if c > 0 && nc == 0 {
                         print!(".");
                     } else {
@@ -146,16 +146,10 @@ impl Machine {
                 Reg16Id(n0b),
                 Self::bytes_to_addr(self.next_instruction_byte(), self.next_instruction_byte()),
             ),
-            0b0110 => Instruction::Jmp(Addr(u16::from_be_bytes([
-                self.next_instruction_byte(),
-                self.next_instruction_byte(),
-            ]))),
+            0b0110 => Instruction::Nop(),
             0b0111 => Instruction::Jo(
                 Reg8Id(n0b),
-                Addr(u16::from_be_bytes([
-                    self.next_instruction_byte(),
-                    self.next_instruction_byte(),
-                ])),
+                Reg16Id(Self::byte_to_nibbles(self.next_instruction_byte()).0),
             ),
             0b1000..=0b1111 => {
                 let op = Self::decode_operation(((n0a & 1) << 4) | n0b);
@@ -200,12 +194,15 @@ impl Machine {
             Instruction::LoadMemW(a, m) => self.write_register_16bit(a, self.read_memory_16bit(m)),
             Instruction::StoreMem(a, m) => self.write_memory_8bit(m, self.read_register_8bit(a)),
             Instruction::StoreMemW(a, m) => self.write_memory_16bit(m, self.read_register_16bit(a)),
-            Instruction::Jmp(m) => {
-                self.program_counter = (m.0 as usize) % self.memory.len();
-            }
-            Instruction::Jo(a, m) => {
-                if self.read_register_8bit(a) & 0b1 == 0 {
-                    self.program_counter = (m.0 as usize) % self.memory.len();
+            Instruction::Nop() => (),
+            Instruction::Jo(a, b) => {
+                if self.read_register_8bit(a) == 1 {
+                    let m = self.read_register_16bit(b);
+                    self.program_counter = (m as usize) % self.memory.len();
+                    self.write_memory_16bit(
+                        Addr(m),
+                        self.read_memory_16bit(Addr(m)).wrapping_add(1),
+                    );
                 }
             }
             Instruction::Op(o, a, b) => self.write_register_8bit(

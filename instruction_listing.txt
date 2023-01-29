@@ -9,8 +9,8 @@ Instruction listing
 | loadmemw  | 0 0 1 1   aaaa    | M M | M M |     | Load 16bit value at memory address M into 16bit register A
 | storemem  | 0 1 0 0   aaaa    | M M | M M |     | Store value of 8bit register A at memory address M
 | storememw | 0 1 0 1   aaaa    | M M | M M |     | Store value of 16bit register A at memory address M
-| jmp       | 0 1 1 0   ----    | M M | M M |     | Unconditional branch to memory address M
-| jo        | 0 1 1 1   aaaa    | M M | M M |     | Conditional branch to memory address M if 8bit register A is odd
+| nop       | 0 1 1 0   ----    |     |     |     | No-op
+| jo        | 0 1 1 1   aaaa    | B   |     |     | Weird conditional branch to address stored at 16bit register B if 8bit register A is 1
 | - - - - - | - - - - - - - - - | - - | - - | - - |
 | [OP]      | 1 0 0 s   ssss    | A B |     |     | Perform 8bit binary operation S (see below) on registers A and B, storing result in A
 | [OP]w     | 1 0 1 s   ssss    | A B |     |     | Perform 16bit binary operation S (see below) on registers A and B, storing result in A

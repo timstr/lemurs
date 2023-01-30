@@ -1,5 +1,6 @@
 l6:
-    subc r0 r11
+    submw r0 r5
+    submw r5 r0
 
     addm r14 r0
     rotlimm r14 r14 2
@@ -10,40 +11,35 @@ l6:
     jo r15 l10
     mod r11 r12
     rotlimm r15 r15 1
-    jo r15 l5
+    jo r15 l9
     rotlimm r15 r15 1
     jo r15 l8
-    subm r2 r11
+;    subm r2 r11
 
 l12:
     addmw r5 r0
-    output r11
-    output r11
-    output r11
-    output r11
-    output r11
-    output r11
-    output r11
-    output r11
+    output r10
+    output r10
+    output r10
 
-    addmimmw r0 r0 8
+    addmimmw r0 r0 4
     jo r1 l6
 
-l8:
     addm r11 r1
     addm r11 r0
-    output r11
-    output r11
-    output r11
-    output r11
+l8:
+    output r10
+    output r10
 l9:
 ;    addmw r5 r0
+    outputw r5
+    output r11
+    outputw r5
     output r11
     output r11
 l10:
-;    addmw r5 r3
-    output r11
-    output r11
+    addm r10 r0
+    addm r11 r2
     output r11
     output r11
 l2:
@@ -94,11 +90,15 @@ l11:
     jo r7 l12
 ;    jmp l12
 l3:
-    xorimm r10 r10 3
+    xorimm r10 r10 1
 
-    xorimm r3 r3 3
-    shrimmw r1 r1 3
-    jo r2 l6
-    rotlimmw r1 r1 3
-;    rotlimmw r1 r1 1
+    rotlimm r1 r1 4
+
+;    addcw r6 r7
+    rotrw r5 r5
+    addc r10 r2
+    subm r3 r11
+    jo r11 l6
+    jo r0 l0
     jmp l12
+

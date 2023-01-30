@@ -1,45 +1,61 @@
 l6:
-    copy r15 r2
-    jo r6 l7
+    subc r0 r11
+
+    addm r14 r0
+    rotlimm r14 r14 2
+    copy r15 r14
+    addm r15 r3
+
+
+    jo r15 l10
+    mod r11 r12
     rotlimm r15 r15 1
-    jo r6 l8
+    jo r15 l5
     rotlimm r15 r15 1
-    jo r6 l9
-    rotlimm r15 r15 1
-    jo r6 l10
-    rotlimm r15 r15 1
+    jo r15 l8
+    subm r2 r11
+
+l12:
+    addmw r5 r0
     output r11
     output r11
     output r11
     output r11
     output r11
-l7:
     output r11
     output r11
     output r11
-    output r11
+
+    addmimmw r0 r0 8
+    jo r1 l6
+
 l8:
+    addm r11 r1
+    addm r11 r0
+    output r11
     output r11
     output r11
     output r11
 l9:
+;    addmw r5 r0
     output r11
     output r11
 l10:
+;    addmw r5 r3
+    output r11
+    output r11
+    output r11
     output r11
 l2:
-l5:
-    output r11
-    outputw r5
-;    addmimmw r5 r5 3
-;    submimmw r5 r5 110
-    addcimm r11 r11 1
+;    output r11
+;    addcimm r11 r11 1
     output r11
     output r9
     jo r11 l5
     jo r4 l3
 l0:
     addcimm r11 r11 3
+l5:
     addmimmw r8 r8 1
     addmw r0 r3
     addm r1 r17
@@ -47,8 +63,8 @@ l0:
     addmimm r0 r0 5
     rotlimmw r0 r0 0
     addmimm r0 r0 1
-    output r11
-    output r11
+;    output r11
+;    output r11
     rotrimmw r0 r0 2
 l1:
     addmimm r0 r0 4
@@ -58,11 +74,13 @@ l1:
     addcimm r3 r3 1
     subcimmw r1 r1 0
     rotlimmw r1 r1 4
-    jo r2 l1
+;    jo r3 l11
     shl r1 r2
     shl r1 r1
     rotrimmw r1 r1 4
-    jo r1 l6
+    jo r3 l11
+    jmp l12
+l11:
     addmw r5 r1
     addmw r5 r0
     jo r10 l5
@@ -71,42 +89,16 @@ l1:
     shrimmw r5 r5 4
     addm r10 r1
     rotlimmw r5 r5 19
-    jo r10 l1
-    rotlimm r0 r0 1
-;    addmimm r0 r0 127
-    output r11
-    output r11
-    output r10
-    output r10
-;    jo r10 l3
-    output r10
-    outputw r5
-    output r3
-    output r4
+    jo r10 l12
+;    rotlimm r0 r0 1
+    jo r7 l12
+;    jmp l12
 l3:
-    output r10
-    xorimm r10 r10 1
+    xorimm r10 r10 3
 
-    rotlimm r1 r1 4
-
-    numzerosw r6 r2
-    addmw r8 r6
-    numzeros r13 r3
-    addcw r6 r7
-    rotrw r5 r5
-    addc r10 r2
-    jo r10 l0
-    xor r13 r13
-    addmw r1 r6
-    rotlimmw r1 r1 13
-    jo r2 l4
-    rotrimmw r1 r1 13
-    rotl r1 r0
-    addcimm r2 r2 1
-
-    xor r2 r3
-    output r2
-l4:
-    shlimmw r0 r0 5
-    jmp l0
-
+    xorimm r3 r3 3
+    shrimmw r1 r1 3
+    jo r2 l6
+    rotlimmw r1 r1 3
+;    rotlimmw r1 r1 1
+    jmp l12

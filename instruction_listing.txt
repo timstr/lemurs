@@ -3,19 +3,20 @@ Instruction listing
 |-----------|-------------------|-----|-----|-----|
 | MNEMONIC  | B0                | B1  | B2  | B*  |
 |-----------|-------------------|-----|-----|-----|
-| output    | 0 0 0 0   aaaa    |     |     |     | Output small register A
-| outputw   | 0 0 0 1   aaaa    |     |     |     | Output wide register A
-| loadmem   | 0 0 1 0   aaaa    | M M | M M |     | Load small value at memory address M into small register A
-| loadmemw  | 0 0 1 1   aaaa    | M M | M M |     | Load wide value at memory address M into wide register A
-| storemem  | 0 1 0 0   aaaa    | M M | M M |     | Store value of small register A at memory address M
-| storememw | 0 1 0 1   aaaa    | M M | M M |     | Store value of wide register A at memory address M
-| jmp       | 0 1 1 0   ----    | M M | M M |     | Unconditional branch to memory address M
-| jo        | 0 1 1 1   aaaa    | M M | M M |     | Conditional branch to memory address M if small register A is odd
-| - - - - - | - - - - - - - - - | - - | - - | - - |
-| [OP]      | 1 0 0 s   ssss    | A B |     |     | Perform small binary operation S (see below) on registers A and B, storing result in A
-| [OP]w     | 1 0 1 s   ssss    | A B |     |     | Perform wide binary operation S (see below) on registers A and B, storing result in A
-| [OP]imm   | 1 1 0 s   ssss    | A B | V V | * * | Perform small binary operation S (see below) on register B and small immediate value V, storing the result in A
-| [OP]immw  | 1 1 1 s   ssss    | A B | V V | * * | Perform wide binary operation S (see below) on register B and wide immediate value V, storing the result in A
+| output    | 0 0 0 0   aaaa    |     |     |     | Output register A
+| loadimm   | 0 0 0 1   aaaa    | V V | * * |     | load immediate value V into register A
+| loadmem   | 0 0 1 0   aaaa    | M M | M M | M M | Load value at memory address M into register A
+| storemem  | 0 0 1 1   aaaa    | M M | M M | M M | Store value of register A at memory address M
+| loadreg   | 0 1 0 0   aaaa    | B - |     |     | Load value stored at global address in register B into register A
+| storereg  | 0 1 0 1   aaaa    | B - |     |     | Store value in register A at global address in register B
+| jmp       | 0 1 1 0   ----    | L L |     |     | Unconditional branch to local address L relative to start of current function
+| jo        | 0 1 1 1   aaaa    | L L |     |     | Conditional branch to local address L relative to start of current function if register A is odd
+| call      | 1 0 0 0   ----    | F F | F F |     | Call function defined at address F << 8
+| callreg   | 1 0 0 1   aaaa    |     |     |     | Indirect call of function address in register A << 8
+| return    | 1 0 1 0   ----    |     |     |     | Return
+| swap      | 1 0 1 1   aaaa    | B - |     |     | swap values in registers A and B
+| [OP]      | 1 1 0 s   ssss    | A B |     |     | Perform binary operation S (see below) on registers A and B, storing the result in A
+| [OP]imm   | 1 1 1 s   ssss    | A - | V V | * * | Perform binary operation S (see below) on register A and immediate value V, storing the result in A
 |-----------|-------------------|-----|-----|-----|
 
 Binary register operations
@@ -24,9 +25,9 @@ Binary register operations
 |----------|-----------|-------------------------------|
 | MNEMONIC | CODE      | EXPLANATION                   |
 |----------|-----------|-------------------------------|
-| copy     | 0 0 0 0 0 | B                             |
+| copy     | 0 0 0 0 0 | B                             | TODO: no longer needed now that loadimm and swap exist
 | not      | 0 0 0 0 1 | ~B                            |
-| neg      | 0 0 0 1 0 | MAX - B                       |
+| neg      | 0 0 0 1 0 | MAX - B                       | TODO: isn't this the same as "not"?
 | reverse  | 0 0 0 1 1 | reverse(B)                    |
 | numones  | 0 0 1 0 0 | byteswap(B)                   |
 | numzeros | 0 0 1 0 1 | popcount(B)                   |

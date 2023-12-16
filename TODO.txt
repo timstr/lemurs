@@ -1,0 +1,82 @@
+TODO
+
+ - consider making all register operations in-place, such that registers can't
+   completely overwritten by another
+ - add back call stack, make extremely robust calling convention
+    - wants:
+        - few if any unreachable parts of the binary (e.g. immediately
+          following a return or jmp instruction)
+        - guaranteed symmetric push and pop of registers
+        -
+    - possible techniques:
+
+        - define a header or parsing strategy that partitions the binary into
+          indexed functions, then call functions by their index
+            (+) makes good use of the binary
+            (+) impossible to call the middle of a function
+            (+) easy to detect recursion and stop it if I care
+            (-) adds overhead when calling, but not much
+            (=) seems slightly contrived w.r.t. a real CPU, but only slightly,
+                compared to e.g. TLB and branch predictor and other types of caches,
+                also resembles how dynamic libraries must be implemented
+            (=) extra work needed to enforce returning before next function
+            (=) unclear how to make this header work robustly and meaningfully
+                even when randomly generated
+                 -> conceptually just a list of function pointers (addresses),
+                    at which should be located well-formed functions with
+                    return instructions
+                 -> how to ensure that functions don't overlap? Perhaps encode
+                    length between functions so that it can be safely summed?
+                    Seems contrived
+
+        - force alignment of functions, store calling convention data in
+          low-order bits of function address
+            (+) makes reasonably good use of the binary
+            (+) easy to implement
+            (=) either function length is limited or it's possible to call into
+                the middle of a function
+            (=) extra work needed to enforce returning before next function, but
+                using alignment makes this relatively straightforward:
+                if program counter would cross alignment boundary, either:
+                    1. implicitly return, or
+                    2. continue to a different function, specified somehow
+            (-) calling convention (e.g. which registers to push/pop) depends on
+                the caller's function address, which, if randomly generated, will
+                be inconsistent
+
+        - force alignment of functions, don't store low order bits at all
+            (+) makes reasonably good use of the binary
+            (+) easy to implement
+            (=) either function length is limited or it's possible to call into
+                the middle of a function
+            (=) extra work needed to enforce returning before next function, but
+                using alignment makes this relatively straightforward:implicitly
+                return if program counter would cross alignment boundary
+            (+) calling convention is consistent for each function, additional
+                info like which registers to push/pop could be specified at the start
+                of the function
+            (+) yup I like this approach
+
+             -> should add function headers to the assembly, but honestly that seems
+                quite useful
+
+    - calling convention ideas:
+        - when function starts executing:
+            1. choose which registers to push/pop (e.g. using first byte of function body)
+            2. push those registers
+            3. (maybe) push information for how to return onto stack (e.g. the same first byte)
+            4. execute function body
+            5. When executing a return instruction (explicitly or implicitly by approaching
+               the start of the next function), pop the same registers in reverse order
+                -> could pop calling convention data off stack OR read from memory by rounding
+                   down program counter to start of function, depending on step 3
+
+# TODO for now
+ - Add instructions for call and return
+ - decide on a maximum function size (256 bytes???)
+ - make branch instructions work strictly within current function (e.g. jump to address relative to start of current function)
+
+
+# TODO for later
+ - consider having just one register size
+ - consider making all operations work in place to avoid blindly overwriting registers

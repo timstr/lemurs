@@ -5,8 +5,20 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "lemurs"
+path = "src/lib.rs"
+
 [dependencies]
 cpal = "0.13"
 eframe = "0.22.0"
 rand = "0.8.3"
 rustfft = "6.1.0"
+
+[[bin]]
+name = "interpret"
+path = "src/interpret.rs"
+
+[[bin]]
+name = "evolve"
+path = "src/evolve.rs"

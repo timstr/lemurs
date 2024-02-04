@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{stdin, Read, Write};
+use std::process::{Command, Stdio};
 use std::{env, fs, panic, process};
 
 use std::sync::{
@@ -7,10 +8,6 @@ use std::sync::{
     Arc,
 };
 
-use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
-    SampleRate, StreamConfig, StreamError,
-};
 use eframe::egui::PointerButton;
 use eframe::{
     egui::{self, Context},
@@ -22,9 +19,13 @@ use lemurs::machine::Machine;
 use rand::{thread_rng, Rng};
 use rustfft::{num_complex::Complex32, Fft, FftPlanner};
 
-const OUTPUT_PREVIEW_LENGTH: usize = 65536;
+use threadpool::ThreadPool;
+
+const OUTPUT_PREVIEW_LENGTH: usize = 65536 * 8 * 8;
 const FFT_WINDOW_SIZE: usize = 256;
-const FFT_HOP_SIZE: usize = FFT_WINDOW_SIZE / 4;
+// const FFT_HOP_SIZE: usize = FFT_WINDOW_SIZE; // / 4;
+// const FFT_HOP_SIZE: usize = 1920 / FFT_WINDOW_SIZE;
+const FFT_HOP_SIZE: usize = FFT_WINDOW_SIZE * 8;
 
 fn make_spectrogram_texture(
     program_output: &[u8],
@@ -36,6 +37,7 @@ fn make_spectrogram_texture(
     assert!(program_output.len() >= FFT_WINDOW_SIZE);
     let image_height = FFT_WINDOW_SIZE / 2;
     let image_width = (program_output.len() - FFT_WINDOW_SIZE + FFT_HOP_SIZE) / FFT_HOP_SIZE;
+    println!("image_width = {}", image_width);
 
     let mut pixels: Vec<Color32> = Vec::new();
     pixels.resize(image_width * image_height, Color32::BLACK);
@@ -106,84 +108,80 @@ fn make_spectrogram_texture(
 struct AudioQueue {
     current_index: Option<usize>,
     sender: Sender<Vec<u8>>,
-    _stream: cpal::Stream,
+    _aplay_process: std::process::Child,
+    _aplay_writer_thread: std::thread::JoinHandle<()>,
 }
 
 impl AudioQueue {
     fn new() -> AudioQueue {
-        let host = cpal::default_host();
-        // TODO: propagate these errors
-        let device = host
-            .default_output_device()
-            .expect("No output device available");
-        println!("Using output device {}", device.name().unwrap());
-        let supported_configs = device
-            .supported_output_configs()
-            .expect("Error while querying configs")
-            .next()
-            .expect("No supported config!?");
-
-        println!(
-            "Supported sample rates are {:?} to {:?}",
-            supported_configs.min_sample_rate().0,
-            supported_configs.max_sample_rate().0
-        );
-
-        println!(
-            "Supported buffer sizes are {:?}",
-            supported_configs.buffer_size()
-        );
-
-        let sample_rate = SampleRate(supported_configs.min_sample_rate().0.max(44_100));
-        let mut config: StreamConfig = supported_configs.with_sample_rate(sample_rate).into();
-
-        config.channels = 1; // TODO: stereo?
-
         let (sender, receiver) = channel::<Vec<u8>>();
         let mut current_data: Option<Vec<u8>> = None;
         let mut current_data_index = 0;
 
-        let data_callback = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+        let channels: usize = 4;
+        let sample_rate: usize = 64_000;
+        let chunk_size = 4096;
+
+        let mut aplay_process = Command::new("aplay")
+            .args([
+                format!("-c{}", channels),
+                format!("-r{}", sample_rate),
+                format!("--buffer-size={}", chunk_size * channels),
+            ])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let mut aplay_stdin = aplay_process.stdin.take().unwrap();
+
+        let chunk_interval =
+            std::time::Duration::from_secs_f64(channels as f64 / sample_rate as f64);
+
+        let mut timestamp = std::time::Instant::now();
+        let mut empty_chunk: Vec<u8> = Vec::new();
+        empty_chunk.resize(chunk_size, 0);
+        let aplay_writer_thread = std::thread::spawn(move || loop {
             while let Ok(data) = receiver.try_recv() {
                 current_data = Some(data);
                 current_data_index = 0;
             }
 
             let Some(d) = &current_data else {
-                data.fill(0.0);
-                return;
+                aplay_stdin.write_all(&empty_chunk).unwrap();
+                continue;
             };
 
-            for (i, v) in data.iter_mut().enumerate() {
-                *v = d.get(current_data_index + i).cloned().unwrap_or(0) as f32;
-            }
-            current_data_index += data.len();
+            // for i in 0..chunk_size {
+            //     let b = d.get(current_data_index + i).cloned().unwrap_or(0);
+            //     aplay_stdin.write(&[b]).unwrap();
+            // }
+            let end_data_index = (current_data_index + chunk_size).min(d.len() - 1);
+            aplay_stdin
+                .write_all(&d[current_data_index..end_data_index])
+                .unwrap();
+            current_data_index += chunk_size;
             if current_data_index >= d.len() {
                 current_data = None;
                 current_data_index = 0;
             }
-        };
 
-        let error_callback = |err: StreamError| {
-            println!("CPAL StreamError: {:?}", err);
-        };
-
-        let stream = device
-            .build_output_stream(&config, data_callback, error_callback)
-            .unwrap();
-        stream.play().unwrap();
+            let next_timestamp = timestamp + chunk_interval;
+            std::thread::sleep(next_timestamp - std::time::Instant::now());
+            timestamp = next_timestamp;
+        });
 
         AudioQueue {
             current_index: None,
             sender,
-            _stream: stream,
+            _aplay_process: aplay_process,
+            _aplay_writer_thread: aplay_writer_thread,
         }
     }
 
     fn queue_audio(&mut self, index: usize, data: &[u8]) {
         if self.current_index != Some(index) {
             self.current_index = Some(index);
-            self.sender.send(data.to_vec()).unwrap();
+            self.sender.send(data.to_vec()).unwrap()
         }
     }
 }
@@ -202,8 +200,8 @@ impl Instance {
 
         let mut machine = Machine::new(program.clone());
 
-        let steps_per_iter = 256;
-        let max_iters: usize = 2048;
+        let steps_per_iter = 2048;
+        let max_iters: usize = 2048 * 8 * 8;
 
         for _ in 0..max_iters {
             machine.run(steps_per_iter, &mut output);
@@ -235,6 +233,7 @@ pub struct LemursApp {
     mutation_amount: usize,
     desired_population_size: usize,
     audio_queue: AudioQueue,
+    threadpool: ThreadPool,
 }
 
 fn random_program(length: usize) -> Vec<u8> {
@@ -287,17 +286,20 @@ impl LemursApp {
             })
             .collect();
 
+        let mut threadpool = ThreadPool::new(std::thread::available_parallelism().unwrap().into());
+
         let desired_population_size = 25;
 
-        let population = (0..desired_population_size)
-            .map(|_| {
-                let mut p = initial_program.clone();
-                for _ in 0..1 {
-                    mutate_program(&mut p);
-                }
-                Instance::new(p, &*fft, &window_coefficients)
-            })
-            .collect();
+        // TODO: add ThreadPool::iota or similar to avoid separate vec here
+        let dummy_indices: Vec<usize> = (0..desired_population_size).collect();
+
+        let population = threadpool.map(&dummy_indices, |_| {
+            let mut p = initial_program.clone();
+            for _ in 0..1 {
+                mutate_program(&mut p);
+            }
+            Instance::new(p, &*fft, &window_coefficients)
+        });
 
         LemursApp {
             population,
@@ -306,6 +308,7 @@ impl LemursApp {
             mutation_amount: 8,
             desired_population_size,
             audio_queue: AudioQueue::new(),
+            threadpool,
         }
     }
 
@@ -395,10 +398,10 @@ impl LemursApp {
             p
         });
 
-        let new_population: Vec<Instance> = new_programs
-            .into_iter()
-            .map(|p| Instance::new(p, &*self.fft, &self.window_coefficients))
-            .collect();
+        let new_population: Vec<Instance> = self.threadpool.map(&new_programs, |p| {
+            // TODO: consider adding ThreadPool::map_into to avoid clone here
+            Instance::new(p.clone(), &*self.fft, &self.window_coefficients)
+        });
 
         self.population = new_population;
     }
@@ -429,24 +432,29 @@ impl App for LemursApp {
                     });
 
                 let num_instances = self.population.len();
-                let num_divisions = (num_instances as f64).sqrt().ceil() as usize;
+                // let num_divisions = (num_instances as f64).sqrt().ceil() as usize;
+                // let num_columns = num_divisions / 2;
+                // let num_rows = num_divisions * 2;
+                let num_rows = num_instances;
+                let num_columns = 1;
 
                 if num_instances == 0 {
                     ui.label("No instances");
                     return;
                 }
 
-                let col_width = ui.available_width() / num_divisions as f32;
-                let row_height = ui.available_height() / num_divisions as f32;
+                let col_width = ui.available_width() / num_columns as f32;
+                let row_height = ui.available_height() / num_rows as f32;
 
                 egui::Grid::new("grid")
                     .min_col_width(col_width)
                     .max_col_width(col_width)
                     .min_row_height(row_height)
+                    .spacing(egui::Vec2::ZERO)
                     .show(ui, |ui| {
                         for i in 0..self.population.len() {
                             self.show_instance(ui, i);
-                            if (i + 1) % num_divisions == 0 {
+                            if (i + 1) % num_columns == 0 {
                                 ui.end_row();
                             }
                         }

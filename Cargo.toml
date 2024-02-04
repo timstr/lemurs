@@ -10,10 +10,10 @@ name = "lemurs"
 path = "src/lib.rs"
 
 [dependencies]
-cpal = "0.13"
 eframe = "0.22.0"
 rand = "0.8.3"
 rustfft = "6.1.0"
+threadpool = { git = "https://github.com/timstr/threadpool", rev = "84e3cd3" }
 
 [[bin]]
 name = "interpret"

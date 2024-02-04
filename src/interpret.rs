@@ -46,15 +46,18 @@ fn main() {
 
     let mut aplay_process = std::process::Command::new("aplay")
         // .args(["-r", "44100", "-f", "S16_BE"])
-        .args(["-c2", "-r64"])
+        .args(["-c4", "-r64"])
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();
 
     let mut aplay_stdin = aplay_process.stdin.take().unwrap();
 
+    // let mut stdout = stdout();
+
     let mut machine = Machine::new(memory);
     loop {
         machine.run(2048, &mut aplay_stdin);
+        // machine.run(2048, &mut stdout);
     }
 }
